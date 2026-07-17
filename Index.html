@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Relógio Solar/Lunar</title>
+  <style>
+    :root{
+      --green:#7CBF8A;
+      --green2:#9ED9AA;
+      --bg:#ffffff;
+      --muted:#9aa3a7;
+      --text:#2a2f33;
+    }
+    html,body{height:100%; margin:0; background:var(--bg); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;}
+    .wrap{height:100%; display:grid; place-items:center;}
+    svg{max-width:520px; width:min(92vw,520px); height:auto;}
+    .centerText{font-weight:600; fill:var(--text); text-anchor:middle;}
+    .subText{font-weight:500; fill:var(--muted); text-anchor:middle;}
+    .ring{fill:none; stroke:rgba(124,191,138,.45); stroke-width:3;}
+    .ring2{fill:none; stroke:rgba(124,191,138,.25); stroke-width:22;}
+    .tick{stroke:rgba(124,191,138,.55); stroke-width:2; stroke-linecap:round;}
+    .dotSun{fill:#FDB813; stroke:rgba(0,0,0,.08); stroke-width:2;}
+    .dotMoon{fill:#C9D3DD; stroke:rgba(0,0,0,.10); stroke-width:2;}
+    .label{font-size:12px; fill:var(--muted); text-anchor:middle;}
+  </style>
+
+  <!-- Astronomy Engine (cálculo astronômico real) -->
+  <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <svg viewBox="0 0 600 600" role="img" aria-label="Relógio com Sol e Lua">
+    <!-- anel largo (estético) -->
+    <circle cx="300" cy="300" r="210" class="ring2"></circle>
+    <!-- anel principal -->
+    <circle cx="300" cy="300" r="210" class="ring"></circle>
+    <!-- anel interno -->
+    <circle cx="300" cy="300" r="150" class="ring"></circle>
+
+    <!-- ticks (24 horas) -->
+    <g id="ticks"></g>
+
+    <!-- pontos -->
+    <circle id="sunDot" cx="300" cy="90" r="12" class="dotSun"></circle>
+    <circle id="moonDot" cx="300" cy="120" r="10" class="dotMoon"></circle>
+
+    <!-- labels -->
+    <text x="300" y="520" class="label" id="posLabel">—</text>
+
+    <!-- centro: hora + data -->
+    <text x="300" y="295" font-size="28" class="centerText" id="timeText">--:--:--</text>
+    <text x="300" y="330" font-size="16" class="subText" id="dateText">---</text>
+  </svg>
+</div>
+
+<script>
+  // ========== CONFIG ==========
+  // Localização (São Paulo por padrão). Se quiser sua cidade exata, troque aqui:
+  const OBSERVER = new Astronomy.Observer(-23.5505, -46.6333, 0); // lat, lon, altitude(m)
+
+  // Raios dos anéis (onde ficam os “planetas”)
+  const R_SUN  = 210;  // no anel externo
+  const R_MOON = 150;  // no anel interno
+
+  // ========== DESENHO DOS TICKS ==========
+  const ticksG = document.getElementById("ticks");
+  const cx = 300, cy = 300;
+
+  function polarToXY(r, angleRad){
+    return { x: cx + r * Math.cos(angleRad), y: cy + r * Math.sin(angleRad) };
+  }
+
+  // 24 marcas principais (como relógio de 24h)
+  for (let h = 0; h < 24; h++){
+    const a = (h/24) * Math.PI*2 - Math.PI/2; // começa no topo
+    const p1 = polarToXY(210, a);
+    const p2 = polarToXY(h % 6 === 0 ? 190 : 198, a); // marca maior a cada 6h
+    const line = document.createElementNS("http://www.w3.org/2000/svg","line");
+    line.setAttribute("x1", p1.x); line.setAttribute("y1", p1.y);
+    line.setAttribute("x2", p2.x); line.setAttribute("y2", p2.y);
+    line.setAttribute("class","tick");
+    ticksG.appendChild(line);
+  }
+
+  // ========== POSIÇÕES REAIS (Sol/Lua) ==========
+  // Ideia: mapear o AZIMUTE (0..360) no círculo.
+  // Azimute é direção no horizonte; muda ao longo do dia de forma “natural”.
+  // (Se você preferir mapear outra coisa, tipo longitude eclíptica, dá também.)
+  function updateAstronomy(now){
+    const time = new Date(now);
+
+    const sun  = Astronomy.Horizon(time, OBSERVER, Astronomy.Body.Sun,  "normal");
+    const moon = Astronomy.Horizon(time, OBSERVER, Astronomy.Body.Moon, "normal");
+
+    // azimuth: graus (0=Norte, 90=Leste...). Vamos converter pra ângulo no círculo
+    // e colocar 0° no topo como no seu exemplo.
+    function angleFromAzimuthDeg(azDeg){
+      // converter: az 0 = norte -> topo
+      // nosso círculo: -90° (topo) como zero, então:
+      return (azDeg * Math.PI/180) - Math.PI/2;
+    }
+
+    const aSun  = angleFromAzimuthDeg(sun.azimuth);
+    const aMoon = angleFromAzimuthDeg(moon.azimuth);
+
+    const sunXY  = polarToXY(R_SUN,  aSun);
+    const moonXY = polarToXY(R_MOON, aMoon);
+
+    const sunDot  = document.getElementById("sunDot");
+    const moonDot = document.getElementById("moonDot");
+
+    sunDot.setAttribute("cx", sunXY.x);
+    sunDot.setAttribute("cy", sunXY.y);
+
+    moonDot.setAttribute("cx", moonXY.x);
+    moonDot.setAttribute("cy", moonXY.y);
+
+    // texto auxiliar (opcional)
+    document.getElementById("posLabel").textContent =
+      `Sol az: ${sun.azimuth.toFixed(1)}° | Lua az: ${moon.azimuth.toFixed(1)}°`;
+
+    return { sun, moon };
+  }
+
+  // ========== HORA/DATA ==========
+  const weekdays = ["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
+  function pad(n){ return String(n).padStart(2,"0"); }
+
+  function updateClock(now){
+    const d = new Date(now);
+    const hh = pad(d.getHours()), mm = pad(d.getMinutes()), ss = pad(d.getSeconds());
+    document.getElementById("timeText").textContent = `${hh}:${mm}:${ss}`;
+
+    const wd = weekdays[d.getDay()];
+    const dd = pad(d.getDate());
+    const mo = pad(d.getMonth()+1);
+    const yy = d.getFullYear();
+    document.getElementById("dateText").textContent = `${wd} • ${dd}/${mo}/${yy}`;
+  }
+
+  // ========== LOOP ==========
+  // relógio: 1s / astronomia: 60s (pra ficar leve)
+  updateClock(Date.now());
+  updateAstronomy(Date.now());
+
+  setInterval(()=>updateClock(Date.now()), 1000);
+  setInterval(()=>updateAstronomy(Date.now()), 60_000);
+</script>
+</body>
+</html>
